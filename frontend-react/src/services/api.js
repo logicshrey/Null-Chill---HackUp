@@ -20,4 +20,9 @@ export const getStats = async () => {
   return response.data
 }
 
+export const collectIntel = async (query, persist = true, demo = false) => {
+  const response = await api.post('/collect-intel', { query, persist, demo })
+  return response.data
+}
+
 export default api

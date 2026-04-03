@@ -100,6 +100,8 @@ def flatten_results_for_table(results: list[dict[str, Any]]) -> pd.DataFrame:
                 "text": text,
                 "threat_type": result.get("threat_type"),
                 "risk_level": result.get("risk_level"),
+                "risk_score": result.get("risk_score"),
+                "source": result.get("source"),
                 "confidence_score": result.get("confidence_score"),
                 "timestamp": result.get("timestamp"),
                 "organizations": ", ".join(

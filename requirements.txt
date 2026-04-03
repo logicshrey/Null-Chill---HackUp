@@ -13,3 +13,4 @@ torch
 pymongo
 requests
 python-dotenv
+telethon

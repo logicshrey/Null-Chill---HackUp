@@ -68,6 +68,7 @@ class MongoManager:
         language_counter = Counter()
         data_type_counter = Counter()
         domain_counter = Counter()
+        source_counter = Counter()
         correlated_alerts = 0
         campaign_scores: list[int] = []
         impact_scores: list[int] = []
@@ -84,6 +85,9 @@ class MongoManager:
                 campaign_scores.append(int(result["correlation"]["campaign_score"]))
             if result.get("impact_assessment", {}).get("impact_score") is not None:
                 impact_scores.append(int(result["impact_assessment"]["impact_score"]))
+            source_name = result.get("source") or result.get("external_intelligence", {}).get("source")
+            if source_name:
+                source_counter[source_name] += 1
             for exposed_type in result.get("impact_assessment", {}).get("exposed_data_types", []):
                 data_type_counter[exposed_type] += 1
             for entity in result.get("entities", []):
@@ -101,6 +105,7 @@ class MongoManager:
             "priority_distribution": dict(priority_counter),
             "language_distribution": dict(language_counter),
             "data_exposure_distribution": dict(data_type_counter),
+            "source_distribution": dict(source_counter),
             "entity_frequency": dict(entity_counter.most_common(20)),
             "organization_tracking": dict(org_counter.most_common(20)),
             "domain_frequency": dict(domain_counter.most_common(20)),

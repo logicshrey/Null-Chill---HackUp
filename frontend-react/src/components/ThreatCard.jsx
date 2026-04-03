@@ -28,6 +28,8 @@ function ThreatCard({ title = 'Threat Result', item, compact = false }) {
   const correlation = item?.correlation ?? item?.results?.correlation ?? {}
   const impact = item?.impact_assessment ?? item?.results?.impact_assessment ?? {}
   const priority = item?.alert_priority ?? item?.results?.alert_priority ?? {}
+  const source = item?.source ?? item?.results?.source ?? item?.results?.external_intelligence?.source
+  const riskScore = item?.risk_score ?? item?.results?.risk_score ?? item?.results?.external_intelligence?.risk_score
 
   return (
     <Motion.article
@@ -52,6 +54,16 @@ function ThreatCard({ title = 'Threat Result', item, compact = false }) {
             {priority?.priority ? (
               <div className="terminal-text rounded-full border border-[#00E5FF]/20 bg-[#00E5FF]/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[#A8F3FF]">
                 Priority {priority.priority}
+              </div>
+            ) : null}
+            {source ? (
+              <div className="terminal-text rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-300">
+                Source {source}
+              </div>
+            ) : null}
+            {typeof riskScore === 'number' ? (
+              <div className="terminal-text rounded-full border border-[#00FF9F]/20 bg-[#00FF9F]/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[#B8FFE0]">
+                Intel Score {(riskScore * 100).toFixed(0)}
               </div>
             ) : null}
           </div>

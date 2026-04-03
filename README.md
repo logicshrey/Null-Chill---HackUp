@@ -24,6 +24,7 @@ AI-powered threat intelligence platform that detects credential leaks, malware s
 - Primary text classifier using TF-IDF + Logistic Regression
 - Secondary classifier using DistilBERT when the transformers stack is available
 - Risk scoring, explainable AI output, organization tracking, and alert persistence
+- Public-source intelligence collection for Telegram, Pastebin, and Dehashed with normalized JSON output
 - FastAPI endpoints for analysis, alerts, and statistics
 - Streamlit dashboard with four pages and Plotly analytics
 
@@ -72,6 +73,12 @@ Example `.env`:
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority&appName=<app-name>
 MONGO_DB_NAME=dark_web_threat_intel
 MONGO_COLLECTION=analyses
+TELEGRAM_API_ID=<telegram_api_id>
+TELEGRAM_API_HASH=<telegram_api_hash>
+TELEGRAM_SESSION_STRING=<telethon_string_session>
+PASTEBIN_API_KEY=<pastebin_developer_api_key>
+DEHASHED_EMAIL=<dehashed_account_email>
+DEHASHED_API_KEY=<dehashed_api_key>
 ```
 
 ## Run The Backend
@@ -83,6 +90,7 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000
 Available endpoints:
 
 - `POST /analyze`
+- `POST /collect-intel`
 - `GET /alerts`
 - `GET /stats`
 
@@ -105,6 +113,12 @@ The UI includes:
 curl -X POST "http://127.0.0.1:8000/analyze" \
   -H "Content-Type: application/json" \
   -d "{\"text\": \"Admin login credentials for SBI with email ops@sbi.com password=Root@123\"}"
+```
+
+```bash
+curl -X POST "http://127.0.0.1:8000/collect-intel" \
+  -H "Content-Type: application/json" \
+  -d "{\"query\": \"example.com\", \"persist\": true}"
 ```
 
 ## Example Inputs
@@ -144,4 +158,7 @@ curl -X POST "http://127.0.0.1:8000/analyze" \
 - The primary classifier is fully validated and saved under `models/`.
 - The DistilBERT path is implemented as an optional secondary classifier and activates when the transformers stack is installed.
 - Alerts include threat type, detected patterns, entities, risk level, and timestamps.
-- Secrets such as MongoDB Atlas URIs should be stored in `.env`, not hardcoded in source files.
+- Secrets such as MongoDB Atlas URIs and intelligence-provider credentials should be stored in `.env`, not hardcoded in source files.
+- Telegram collection uses Telethon and requires a valid authenticated string session.
+- Dehashed requests require both the account email and API key because the API uses authenticated requests.
+- Pastebin collection only uses public data and may require access approvals for their scraping interface.

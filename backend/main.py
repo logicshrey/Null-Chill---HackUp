@@ -55,6 +55,12 @@ class AnalyzeResponse(BaseModel):
     alert_priority: dict[str, Any]
 
 
+class CollectIntelRequest(BaseModel):
+    query: str = Field(..., min_length=2, description="Organization name or domain to search across public intelligence sources.")
+    persist: bool = Field(True, description="Store normalized findings in MongoDB so the existing dashboards can display them.")
+    demo: bool = Field(False, description="Generate isolated demo findings instead of querying live providers.")
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     engine.bootstrap()
@@ -101,6 +107,14 @@ def get_stats() -> dict[str, Any]:
         return engine.get_stats()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Stats retrieval failed: {exc}") from exc
+
+
+@app.post("/collect-intel")
+def collect_intelligence(payload: CollectIntelRequest) -> dict[str, Any]:
+    try:
+        return engine.collect_external_intelligence(payload.query, persist=payload.persist, demo=payload.demo)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"External intelligence collection failed: {exc}") from exc
 
 
 if __name__ == "__main__":

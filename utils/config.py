@@ -23,6 +23,36 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "dark_web_threat_intel")
 MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "analyses")
 
+# External intelligence providers are configured through environment variables so
+# operational secrets stay out of the codebase while the integration remains plug-and-play.
+TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID", "0") or 0)
+TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+TELEGRAM_SESSION_STRING = os.getenv("TELEGRAM_SESSION_STRING", "")
+
+PASTEBIN_API_KEY = os.getenv("PASTEBIN_API_KEY", "")
+
+DEHASHED_EMAIL = os.getenv("DEHASHED_EMAIL", "")
+DEHASHED_API_KEY = os.getenv("DEHASHED_API_KEY", "")
+
+PUBLIC_INTEL_MAX_ITEMS = int(os.getenv("PUBLIC_INTEL_MAX_ITEMS", "10") or 10)
+PUBLIC_INTEL_REQUEST_TIMEOUT = float(os.getenv("PUBLIC_INTEL_REQUEST_TIMEOUT", "12") or 12)
+
+PLATFORM_REPUTATION_SCORES = {
+    "Telegram": 0.72,
+    "Pastebin": 0.58,
+    "Dehashed": 0.9,
+}
+
+DATA_SENSITIVITY_SCORES = {
+    "credentials": 0.95,
+    "email addresses": 0.7,
+    "usernames": 0.55,
+    "hashed passwords": 0.88,
+    "phone numbers": 0.62,
+    "ip addresses": 0.58,
+    "undetermined": 0.35,
+}
+
 LABELS = [
     "Credential Leak",
     "Malware Sale",
