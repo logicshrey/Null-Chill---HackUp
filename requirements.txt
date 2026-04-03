@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+streamlit
+pandas
+numpy
+plotly
+scikit-learn
+joblib
+spacy
+sentence-transformers
+transformers
+torch
+pymongo
+requests
