@@ -22,6 +22,7 @@ METRICS_PATH = MODELS_DIR / "training_metrics.json"
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "dark_web_threat_intel")
 MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "analyses")
+MONGO_ENABLED = os.getenv("MONGO_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 # External intelligence providers are configured through environment variables so
 # operational secrets stay out of the codebase while the integration remains plug-and-play.

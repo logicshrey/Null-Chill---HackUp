@@ -109,6 +109,11 @@ def get_stats() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Stats retrieval failed: {exc}") from exc
 
 
+@app.get("/health")
+def health_check() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/collect-intel")
 def collect_intelligence(payload: CollectIntelRequest) -> dict[str, Any]:
     try:

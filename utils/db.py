@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from utils.config import MONGO_COLLECTION, MONGO_DB_NAME, MONGO_URI
+from utils.config import MONGO_COLLECTION, MONGO_DB_NAME, MONGO_ENABLED, MONGO_URI
 
 
 class MongoManager:
@@ -18,6 +18,12 @@ class MongoManager:
         self._connect()
 
     def _connect(self) -> None:
+        if not MONGO_ENABLED:
+            self.connected = False
+            self.collection = None
+            self.warning = "MongoDB disabled; using in-memory fallback storage."
+            return
+
         try:
             from pymongo import MongoClient
 

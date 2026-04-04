@@ -7,7 +7,7 @@ import Analyzer from './pages/Analyzer'
 import Dashboard from './pages/Dashboard'
 import Feed from './pages/Feed'
 import Upload from './pages/Upload'
-import { getStats } from './services/api'
+import { getHealth } from './services/api'
 
 function BackgroundParticles() {
   const particles = Array.from({ length: 14 }, (_, index) => ({
@@ -53,13 +53,13 @@ function App() {
 
     const checkBackend = async () => {
       try {
-        await getStats()
+        await getHealth()
         if (active) {
           setBackendWarning('')
         }
       } catch {
         if (active) {
-          setBackendWarning('Backend offline. Start FastAPI at http://127.0.0.1:8000 to enable live analysis.')
+          setBackendWarning('Backend health check failed. If live analysis still works, refresh once while the service finishes recovering.')
         }
       }
     }

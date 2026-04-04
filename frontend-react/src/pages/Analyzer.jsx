@@ -167,9 +167,12 @@ function Analyzer() {
         )
       }
     } catch (apiError) {
+      const isTimeout = apiError?.code === 'ECONNABORTED'
       setToast(
         apiError?.response?.data?.detail ||
-          'Backend intelligence collection is unavailable. Ensure FastAPI is running.',
+          (isTimeout
+            ? 'Source intelligence collection is taking longer than expected. The backend is reachable, but this query timed out in the browser.'
+            : 'Source intelligence collection failed. The backend may be busy or one of the providers returned an error.'),
       )
       setIntelResponse(null)
     } finally {

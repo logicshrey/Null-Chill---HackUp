@@ -1,7 +1,21 @@
 import axios from 'axios'
 
+function resolveApiBaseUrl() {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL
+  if (configuredBaseUrl) {
+    return configuredBaseUrl
+  }
+
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location
+    return `${protocol}//${hostname}:8000`
+  }
+
+  return 'http://127.0.0.1:8000'
+}
+
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000',
+  baseURL: resolveApiBaseUrl(),
   timeout: 15000,
 })
 
@@ -20,8 +34,13 @@ export const getStats = async () => {
   return response.data
 }
 
+export const getHealth = async () => {
+  const response = await api.get('/health', { timeout: 5000 })
+  return response.data
+}
+
 export const collectIntel = async (query, persist = true, demo = false) => {
-  const response = await api.post('/collect-intel', { query, persist, demo })
+  const response = await api.post('/collect-intel', { query, persist, demo }, { timeout: 60000 })
   return response.data
 }
 
