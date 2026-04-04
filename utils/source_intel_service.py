@@ -13,6 +13,7 @@ from utils.config import (
     DATA_SENSITIVITY_SCORES,
     DEHASHED_API_KEY,
     DEHASHED_EMAIL,
+    GITHUB_TOKEN,
     PASTEBIN_API_KEY,
     PLATFORM_REPUTATION_SCORES,
     PUBLIC_INTEL_MAX_ITEMS,
@@ -249,12 +250,141 @@ class DehashedIntelClient(BaseIntelClient):
         return " ".join(parts)
 
 
+class GitHubIntelClient(BaseIntelClient):
+    name = "GitHub"
+    code_search_url = "https://api.github.com/search/code"
+    issue_search_url = "https://api.github.com/search/issues"
+
+    def collect(self, query: str) -> list[RawSourceHit]:
+        if not GITHUB_TOKEN:
+            raise IntelligenceSourceError("GitHub token is not configured.")
+
+        session = requests.Session()
+        session.headers.update(
+            {
+                "Accept": "application/vnd.github.text-match+json, application/vnd.github+json",
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+        )
+
+        code_hits = self._search_code(session, query)
+        issue_hits = self._search_issues(session, query)
+        return [*code_hits, *issue_hits][: PUBLIC_INTEL_MAX_ITEMS * 2]
+
+    def _search_code(self, session: requests.Session, query: str) -> list[RawSourceHit]:
+        search_query = self._build_code_query(query)
+        response = session.get(
+            self.code_search_url,
+            params={"q": search_query, "per_page": PUBLIC_INTEL_MAX_ITEMS},
+            timeout=PUBLIC_INTEL_REQUEST_TIMEOUT,
+        )
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise IntelligenceSourceError(f"GitHub code search failed: {exc}") from exc
+
+        payload = response.json()
+        items = payload.get("items", [])
+        hits: list[RawSourceHit] = []
+        for item in items[:PUBLIC_INTEL_MAX_ITEMS]:
+            repository = item.get("repository", {})
+            text_matches = item.get("text_matches", [])
+            snippet = " ".join(match.get("fragment", "") for match in text_matches if match.get("fragment"))
+            text = " ".join(
+                part
+                for part in (
+                    item.get("name"),
+                    item.get("path"),
+                    repository.get("full_name"),
+                    snippet,
+                    item.get("html_url"),
+                )
+                if part
+            )
+            hits.append(
+                RawSourceHit(
+                    source=self.name,
+                    text=text,
+                    date_found=datetime.now(timezone.utc).date().isoformat(),
+                    metadata={
+                        "search_type": "code",
+                        "repository": repository.get("full_name"),
+                        "html_url": item.get("html_url"),
+                        "path": item.get("path"),
+                        "score": item.get("score"),
+                    },
+                )
+            )
+        return hits
+
+    def _search_issues(self, session: requests.Session, query: str) -> list[RawSourceHit]:
+        search_query = self._build_issue_query(query)
+        response = session.get(
+            self.issue_search_url,
+            params={"q": search_query, "per_page": PUBLIC_INTEL_MAX_ITEMS},
+            timeout=PUBLIC_INTEL_REQUEST_TIMEOUT,
+        )
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise IntelligenceSourceError(f"GitHub issue search failed: {exc}") from exc
+
+        payload = response.json()
+        items = payload.get("items", [])
+        hits: list[RawSourceHit] = []
+        for item in items[:PUBLIC_INTEL_MAX_ITEMS]:
+            body = str(item.get("body", "") or "")[:1200]
+            text = " ".join(
+                part
+                for part in (
+                    item.get("title"),
+                    body,
+                    item.get("html_url"),
+                )
+                if part
+            )
+            hits.append(
+                RawSourceHit(
+                    source=self.name,
+                    text=text,
+                    date_found=self._resolve_issue_date(item),
+                    metadata={
+                        "search_type": "issues",
+                        "html_url": item.get("html_url"),
+                        "state": item.get("state"),
+                        "repository_url": item.get("repository_url"),
+                        "score": item.get("score"),
+                    },
+                )
+            )
+        return hits
+
+    @staticmethod
+    def _build_code_query(query: str) -> str:
+        exact_query = f"\"{query}\""
+        return f"{exact_query} in:file"
+
+    @staticmethod
+    def _build_issue_query(query: str) -> str:
+        exact_query = f"\"{query}\""
+        return exact_query
+
+    @staticmethod
+    def _resolve_issue_date(item: dict[str, Any]) -> str:
+        value = item.get("updated_at") or item.get("created_at")
+        if isinstance(value, str) and value:
+            return value[:10]
+        return datetime.now(timezone.utc).date().isoformat()
+
+
 class ExternalIntelligenceService:
     """Collects public intelligence and normalizes it into a dashboard-ready structure."""
 
     def __init__(self) -> None:
         self.clients: list[BaseIntelClient] = [
             TelegramIntelClient(),
+            GitHubIntelClient(),
             PastebinIntelClient(),
             DehashedIntelClient(),
         ]
@@ -416,12 +546,16 @@ class ExternalIntelligenceService:
         usernames = HANDLE_PATTERN.findall(haystack)
         has_threat_signal = bool(THREAT_SIGNAL_PATTERN.search(haystack))
         has_sensitive_signal = bool(emails or usernames or PASSWORD_SIGNAL_PATTERN.search(haystack))
+        search_type = str(hit.metadata.get("search_type", "")).lower()
 
         # Domain queries should match the exact domain or emails on that domain.
         if "." in normalized_query and " " not in normalized_query:
             exact_domain_match = normalized_query in {domain.lower() for domain in domains}
             email_domain_match = any(email.lower().endswith(f"@{normalized_query}") for email in emails)
-            return exact_domain_match or email_domain_match or (normalized_query in haystack and has_threat_signal)
+            github_code_match = hit.source == "GitHub" and search_type == "code" and exact_domain_match
+            return github_code_match or exact_domain_match or email_domain_match or (
+                normalized_query in haystack and has_threat_signal
+            )
 
         # Organization-name queries must mention the org and also contain threat/exposure signals.
         org_match = normalized_query in haystack

@@ -79,6 +79,7 @@ TELEGRAM_SESSION_STRING=<telethon_string_session>
 PASTEBIN_API_KEY=<pastebin_developer_api_key>
 DEHASHED_EMAIL=<dehashed_account_email>
 DEHASHED_API_KEY=<dehashed_api_key>
+GITHUB_TOKEN=<github_personal_access_token>
 ```
 
 ## Run The Backend
@@ -162,3 +163,4 @@ curl -X POST "http://127.0.0.1:8000/collect-intel" \
 - Telegram collection uses Telethon and requires a valid authenticated string session.
 - Dehashed requests require both the account email and API key because the API uses authenticated requests.
 - Pastebin collection only uses public data and may require access approvals for their scraping interface.
+- GitHub collection uses a personal access token for higher-rate public search access across code and issue results.
