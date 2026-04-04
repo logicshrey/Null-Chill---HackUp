@@ -14,6 +14,8 @@ from utils.config import (
     DEHASHED_API_KEY,
     DEHASHED_EMAIL,
     GITHUB_TOKEN,
+    INTELX_API_BASE,
+    INTELX_API_KEY,
     PASTEBIN_API_KEY,
     PLATFORM_REPUTATION_SCORES,
     PUBLIC_INTEL_MAX_ITEMS,
@@ -378,6 +380,124 @@ class GitHubIntelClient(BaseIntelClient):
         return datetime.now(timezone.utc).date().isoformat()
 
 
+class IntelXIntelClient(BaseIntelClient):
+    name = "IntelX"
+    search_path = "/intelligent/search"
+    result_path = "/intelligent/search/result"
+    info_path = "/authenticate/info"
+
+    def collect(self, query: str) -> list[RawSourceHit]:
+        if not INTELX_API_KEY:
+            raise IntelligenceSourceError("IntelX API key is not configured.")
+
+        session = requests.Session()
+        session.headers.update(
+            {
+                "x-key": INTELX_API_KEY,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+        )
+
+        try:
+            self._validate_access(session)
+            search_id = self._start_search(session, query)
+            return self._fetch_results(session, search_id, query)
+        except IntelligenceSourceError:
+            raise
+        except Exception as exc:
+            raise IntelligenceSourceError(f"IntelX collection failed: {exc}") from exc
+
+    def _validate_access(self, session: requests.Session) -> None:
+        response = session.get(f"{INTELX_API_BASE}{self.info_path}", timeout=PUBLIC_INTEL_REQUEST_TIMEOUT)
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise IntelligenceSourceError(f"IntelX authentication failed: {exc}") from exc
+
+    def _start_search(self, session: requests.Session, query: str) -> str:
+        payload = {
+            "term": query,
+            "maxresults": max(1, PUBLIC_INTEL_MAX_ITEMS),
+            "media": 0,
+            "target": 0,
+            "terminate": [],
+            "timeout": min(60, max(5, int(PUBLIC_INTEL_REQUEST_TIMEOUT))),
+        }
+        response = session.post(
+            f"{INTELX_API_BASE}{self.search_path}",
+            json=payload,
+            timeout=PUBLIC_INTEL_REQUEST_TIMEOUT,
+        )
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise IntelligenceSourceError(f"IntelX search failed: {exc}") from exc
+
+        search_id = response.json().get("id")
+        if not search_id:
+            raise IntelligenceSourceError("IntelX search did not return a search ID.")
+        return str(search_id)
+
+    def _fetch_results(self, session: requests.Session, search_id: str, query: str) -> list[RawSourceHit]:
+        response = session.get(
+            f"{INTELX_API_BASE}{self.result_path}",
+            params={"id": search_id},
+            timeout=max(PUBLIC_INTEL_REQUEST_TIMEOUT, 20),
+        )
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            raise IntelligenceSourceError(f"IntelX result retrieval failed: {exc}") from exc
+
+        payload = response.json()
+        records = payload.get("records", [])
+        hits: list[RawSourceHit] = []
+        for record in records[:PUBLIC_INTEL_MAX_ITEMS]:
+            text = self._record_to_text(record, query)
+            hits.append(
+                RawSourceHit(
+                    source=self.name,
+                    text=text,
+                    date_found=self._resolve_record_date(record),
+                    metadata={
+                        "bucket": record.get("bucket"),
+                        "name": record.get("name"),
+                        "media": record.get("media"),
+                        "type": record.get("type"),
+                        "systemid": record.get("systemid"),
+                        "storageid": record.get("storageid"),
+                        "search_type": "intelx",
+                    },
+                )
+            )
+        return hits
+
+    @staticmethod
+    def _record_to_text(record: dict[str, Any], query: str) -> str:
+        key_values = record.get("keyvalues") or []
+        keyvalue_text = " ".join(
+            f"{item.get('key')}={item.get('value')}"
+            for item in key_values
+            if isinstance(item, dict) and (item.get("key") or item.get("value"))
+        )
+        parts = [
+            str(record.get("name", "") or ""),
+            str(record.get("description", "") or ""),
+            str(record.get("bucket", "") or ""),
+            keyvalue_text,
+            query,
+        ]
+        return " ".join(part for part in parts if part).strip()
+
+    @staticmethod
+    def _resolve_record_date(record: dict[str, Any]) -> str:
+        value = record.get("date") or record.get("added")
+        if isinstance(value, str) and value:
+            return value[:10]
+        return datetime.now(timezone.utc).date().isoformat()
+
+
 class ExternalIntelligenceService:
     """Collects public intelligence and normalizes it into a dashboard-ready structure."""
 
@@ -385,6 +505,7 @@ class ExternalIntelligenceService:
         self.clients: list[BaseIntelClient] = [
             TelegramIntelClient(),
             GitHubIntelClient(),
+            IntelXIntelClient(),
             PastebinIntelClient(),
             DehashedIntelClient(),
         ]
@@ -553,7 +674,8 @@ class ExternalIntelligenceService:
             exact_domain_match = normalized_query in {domain.lower() for domain in domains}
             email_domain_match = any(email.lower().endswith(f"@{normalized_query}") for email in emails)
             github_code_match = hit.source == "GitHub" and search_type == "code" and exact_domain_match
-            return github_code_match or exact_domain_match or email_domain_match or (
+            intelx_match = hit.source == "IntelX" and normalized_query in haystack
+            return github_code_match or intelx_match or exact_domain_match or email_domain_match or (
                 normalized_query in haystack and has_threat_signal
             )
 

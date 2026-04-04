@@ -80,6 +80,8 @@ PASTEBIN_API_KEY=<pastebin_developer_api_key>
 DEHASHED_EMAIL=<dehashed_account_email>
 DEHASHED_API_KEY=<dehashed_api_key>
 GITHUB_TOKEN=<github_personal_access_token>
+INTELX_API_KEY=<intelx_api_key>
+INTELX_API_BASE=https://free.intelx.io
 ```
 
 ## Run The Backend
@@ -164,3 +166,4 @@ curl -X POST "http://127.0.0.1:8000/collect-intel" \
 - Dehashed requests require both the account email and API key because the API uses authenticated requests.
 - Pastebin collection only uses public data and may require access approvals for their scraping interface.
 - GitHub collection uses a personal access token for higher-rate public search access across code and issue results.
+- IntelX collection uses the assigned Search API instance and API key from your IntelX developer dashboard.

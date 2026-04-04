@@ -34,6 +34,8 @@ PASTEBIN_API_KEY = os.getenv("PASTEBIN_API_KEY", "")
 DEHASHED_EMAIL = os.getenv("DEHASHED_EMAIL", "")
 DEHASHED_API_KEY = os.getenv("DEHASHED_API_KEY", "")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+INTELX_API_KEY = os.getenv("INTELX_API_KEY", "")
+INTELX_API_BASE = os.getenv("INTELX_API_BASE", "https://free.intelx.io")
 
 PUBLIC_INTEL_MAX_ITEMS = int(os.getenv("PUBLIC_INTEL_MAX_ITEMS", "10") or 10)
 PUBLIC_INTEL_REQUEST_TIMEOUT = float(os.getenv("PUBLIC_INTEL_REQUEST_TIMEOUT", "12") or 12)
@@ -43,6 +45,7 @@ PLATFORM_REPUTATION_SCORES = {
     "Pastebin": 0.58,
     "Dehashed": 0.9,
     "GitHub": 0.61,
+    "IntelX": 0.79,
 }
 
 DATA_SENSITIVITY_SCORES = {
