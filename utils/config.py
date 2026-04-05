@@ -18,11 +18,16 @@ PROCESSED_DATA_PATH = DATA_DIR / "processed_data.csv"
 PRIMARY_MODEL_PATH = MODELS_DIR / "tfidf_logreg.joblib"
 SECONDARY_MODEL_DIR = MODELS_DIR / "distilbert_threat"
 METRICS_PATH = MODELS_DIR / "training_metrics.json"
+MONITORING_STATE_PATH = DATA_DIR / "monitoring_state.json"
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "dark_web_threat_intel")
 MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "analyses")
 MONGO_ENABLED = os.getenv("MONGO_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8001") or 8001)
+WATCHLIST_DEFAULT_INTERVAL_SECONDS = int(os.getenv("WATCHLIST_DEFAULT_INTERVAL_SECONDS", "300") or 300)
+WATCHLIST_MIN_INTERVAL_SECONDS = int(os.getenv("WATCHLIST_MIN_INTERVAL_SECONDS", "60") or 60)
+WEBHOOK_TIMEOUT_SECONDS = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10") or 10)
 
 # External intelligence providers are configured through environment variables so
 # operational secrets stay out of the codebase while the integration remains plug-and-play.

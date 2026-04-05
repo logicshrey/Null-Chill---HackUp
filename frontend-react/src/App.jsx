@@ -99,7 +99,8 @@ function App() {
               <Route path="/" element={<Navigate to="/analyzer" replace />} />
               <Route path="/analyzer" element={<Analyzer />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/feed" element={<Feed />} />
+              <Route path="/monitor" element={<Feed />} />
+              <Route path="/feed" element={<Navigate to="/monitor" replace />} />
               <Route path="/upload" element={<Upload />} />
             </Routes>
           </AnimatePresence>

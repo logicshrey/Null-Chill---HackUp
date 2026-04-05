@@ -165,6 +165,7 @@ class ThreatIntelligenceEngine:
         collection = service.build_demo_collection(query) if demo else service.collect(query)
         recent_alerts = self.db.fetch_alerts(limit=200)
         findings: list[dict[str, Any]] = []
+        case_updates: list[dict[str, Any]] = []
 
         for finding in collection.get("findings", []):
             result = self._build_external_finding_result(
@@ -179,6 +180,22 @@ class ThreatIntelligenceEngine:
                 result["warning"] = self.db.warning
             findings.append(result)
             recent_alerts.append({"results": result})
+            if persist:
+                case_record, action = self.db.save_case(
+                    self._build_exposure_case(
+                        query=query,
+                        result=result,
+                        watchlist=None,
+                    )
+                )
+                case_updates.append(
+                    {
+                        "action": action,
+                        "case_id": case_record.get("id"),
+                        "title": case_record.get("title"),
+                        "priority": case_record.get("priority"),
+                    }
+                )
 
         summary = self._build_external_collection_summary(
             query=query,
@@ -194,7 +211,39 @@ class ThreatIntelligenceEngine:
             "generated_at": collection.get("generated_at"),
             "demo_mode": bool(collection.get("demo_mode", demo)),
             "stored_findings": sum(1 for finding in findings if finding.get("storage", {}).get("stored")),
+            "case_updates": case_updates,
             "count": len(findings),
+        }
+
+    def sync_watchlist(self, watchlist: dict[str, Any]) -> dict[str, Any]:
+        query = str(watchlist.get("query", "")).strip()
+        demo_mode = bool(watchlist.get("demo_mode", False))
+        response = self.collect_external_intelligence(query, persist=False, demo=demo_mode)
+        updates: list[dict[str, Any]] = []
+
+        for result in response.get("findings", []):
+            case_record, action = self.db.save_case(
+                self._build_exposure_case(
+                    query=query,
+                    result=result,
+                    watchlist=watchlist,
+                )
+            )
+            updates.append({"action": action, "case": case_record})
+
+        self.db.record_audit_event(
+            {
+                "event_type": "watchlist_sync",
+                "watchlist_id": watchlist.get("id"),
+                "watchlist_name": watchlist.get("name"),
+                "query": query,
+                "case_count": len(updates),
+            }
+        )
+        return {
+            "watchlist": watchlist,
+            "collection": response,
+            "updates": updates,
         }
 
     def detect_patterns(self, text: str) -> dict[str, list[str]]:
@@ -703,6 +752,162 @@ class ThreatIntelligenceEngine:
         if priority_score >= 40:
             return "MEDIUM"
         return "LOW"
+
+    def _build_exposure_case(
+        self,
+        query: str,
+        result: dict[str, Any],
+        watchlist: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        external = result.get("external_intelligence", {})
+        source_name = str(external.get("source") or result.get("source") or "Unknown")
+        organization = str(external.get("organization") or query)
+        matched_indicators = list(external.get("matched_indicators", []))
+        affected_assets = list(external.get("affected_assets", []))
+        exposed_data_types = list(external.get("data_types", []))
+        recommended_actions = self._recommended_actions_for_case(
+            threat_type=result.get("threat_type", "Unknown"),
+            affected_assets=affected_assets,
+            exposed_data_types=exposed_data_types,
+        )
+        confidence_basis = [
+            f"Priority score {result.get('alert_priority', {}).get('priority_score', 0)} from risk, impact, and correlation scoring.",
+            f"Source {source_name} reported {external.get('estimated_records') or 'an undisclosed amount of'} exposure.",
+            *list(result.get("explanation", []))[:3],
+        ]
+        source_locations = list(external.get("source_locations", []))
+        summary = external.get("summary") or result.get("impact_assessment", {}).get("summary") or "Exposure detected."
+        fingerprint_parts = [
+            organization.lower(),
+            str(result.get("threat_type", "")).lower(),
+            "|".join(sorted(item.lower() for item in affected_assets[:4])),
+            "|".join(sorted(item.lower() for item in matched_indicators[:4])),
+        ]
+        fingerprint_key = "::".join(fingerprint_parts)
+        case_title = f"{organization} exposure detected via {source_name}"
+        event_timestamp = result.get("timestamp")
+        first_seen = event_timestamp
+
+        evidence_id = f"{source_name.lower()}::{event_timestamp}::{fingerprint_key}"
+        source_entry = {
+            "source": source_name,
+            "first_seen": first_seen,
+            "last_seen": event_timestamp,
+            "evidence_count": int(external.get("volume", 0) or 0),
+            "source_locations": source_locations,
+            "risk_score": float(result.get("risk_score", 0.0) or 0.0),
+            "confidence_score": float(result.get("confidence_score", 0.0) or 0.0),
+            "related_sources": list(external.get("related_sources", [])),
+        }
+
+        business_unit = str(
+            (watchlist or {}).get("business_unit")
+            or self._infer_business_unit(affected_assets, exposed_data_types)
+        )
+
+        case_payload = {
+            "fingerprint_key": fingerprint_key,
+            "organization": organization,
+            "query": query,
+            "title": case_title,
+            "summary": summary,
+            "executive_summary": self._build_executive_case_summary(result, external),
+            "case_status": "new",
+            "owner": str((watchlist or {}).get("owner") or "Unassigned"),
+            "business_unit": business_unit,
+            "priority": result.get("alert_priority", {}).get("priority", "LOW"),
+            "priority_score": int(result.get("alert_priority", {}).get("priority_score", 0) or 0),
+            "risk_level": result.get("risk_level", "LOW"),
+            "confidence_score": float(result.get("confidence_score", 0.0) or 0.0),
+            "threat_type": result.get("threat_type"),
+            "severity_reason": self._severity_reason_for_case(result, external),
+            "affected_assets": affected_assets,
+            "matched_indicators": matched_indicators,
+            "exposed_data_types": exposed_data_types,
+            "estimated_total_records": external.get("estimated_record_count"),
+            "estimated_total_records_label": external.get("estimated_records") or "Amount not disclosed by the source",
+            "recommended_actions": recommended_actions,
+            "confidence_basis": confidence_basis,
+            "watchlists": [str((watchlist or {}).get("name") or organization)],
+            "sources": [source_entry],
+            "evidence": [
+                {
+                    "evidence_id": evidence_id,
+                    "timestamp": event_timestamp,
+                    "source": source_name,
+                    "summary": summary,
+                    "source_locations": source_locations,
+                    "matched_indicators": matched_indicators,
+                    "data_breakdown": list(external.get("data_breakdown", [])),
+                    "raw_excerpt": str(result.get("input_text", "") or "")[:800],
+                    "provenance": {
+                        "query": query,
+                        "demo_mode": bool(external.get("demo_mode", False)),
+                        "raw_items": list(external.get("raw_items", []))[:5],
+                    },
+                }
+            ],
+            "timeline": [
+                {
+                    "timestamp": event_timestamp,
+                    "event_type": "detected",
+                    "message": f"{source_name} produced a new exposure signal for {organization}.",
+                }
+            ],
+            "first_seen": first_seen,
+            "last_seen": event_timestamp,
+        }
+        return case_payload
+
+    @staticmethod
+    def _recommended_actions_for_case(
+        threat_type: str,
+        affected_assets: list[str],
+        exposed_data_types: list[str],
+    ) -> list[str]:
+        actions = [
+            "Validate the exposed asset and verify whether the data belongs to your organization.",
+            "Preserve source evidence and notify the incident response owner.",
+        ]
+        if "credentials" in exposed_data_types or threat_type == "Credential Leak":
+            actions.append("Reset exposed credentials, revoke active sessions, and review MFA coverage.")
+        if "email addresses" in exposed_data_types:
+            actions.append("Notify exposed users and monitor for phishing or account takeover activity.")
+        if "ip addresses" in exposed_data_types or any(asset.count(".") >= 1 for asset in affected_assets):
+            actions.append("Inspect affected infrastructure for internet exposure, weak services, and misconfigurations.")
+        if threat_type == "Database Dump":
+            actions.append("Determine whether regulated customer or employee records are involved and begin disclosure assessment.")
+        return actions
+
+    @staticmethod
+    def _severity_reason_for_case(result: dict[str, Any], external: dict[str, Any]) -> str:
+        asset_count = len(external.get("affected_assets", []))
+        source_count = 1 + len(external.get("related_sources", []))
+        exposure = external.get("estimated_records") or "an unknown amount of data"
+        return (
+            f"{result.get('threat_type', 'Exposure')} with {result.get('risk_level', 'LOW')} risk, "
+            f"{exposure}, {asset_count} affected asset(s), and corroboration across {source_count} source(s)."
+        )
+
+    @staticmethod
+    def _infer_business_unit(affected_assets: list[str], exposed_data_types: list[str]) -> str:
+        asset_blob = " ".join(affected_assets).lower()
+        if any(keyword in asset_blob for keyword in ("vpn", "admin", "rdp", "ssh", "api", "prod")):
+            return "Infrastructure Security"
+        if "email addresses" in exposed_data_types or "credentials" in exposed_data_types:
+            return "Identity & Access"
+        if "bulk personal records" in exposed_data_types:
+            return "Privacy & Compliance"
+        return "Security Operations"
+
+    @staticmethod
+    def _build_executive_case_summary(result: dict[str, Any], external: dict[str, Any]) -> str:
+        return (
+            f"{external.get('source', 'A monitored source')} exposed {external.get('estimated_records') or 'an unknown amount of data'} "
+            f"linked to {external.get('organization', 'the organization')}. Priority is "
+            f"{result.get('alert_priority', {}).get('priority', 'LOW')} due to {result.get('threat_type', 'detected exposure').lower()} "
+            f"signals and the affected assets {', '.join(external.get('affected_assets', [])[:3]) or 'still being identified'}."
+        )
 
     def simulate_alerts(self, count: int = 5) -> list[dict[str, Any]]:
         results = []

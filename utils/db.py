@@ -4,7 +4,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from utils.config import MONGO_COLLECTION, MONGO_DB_NAME, MONGO_ENABLED, MONGO_URI
+from utils.config import MONGO_COLLECTION, MONGO_DB_NAME, MONGO_ENABLED, MONGO_URI, MONITORING_STATE_PATH
+from utils.local_store import LocalMonitoringStore
 
 
 class MongoManager:
@@ -14,7 +15,7 @@ class MongoManager:
         self.warning: str | None = None
         self.client = None
         self.collection = None
-        self.fallback_alerts: list[dict[str, Any]] = []
+        self.local_store = LocalMonitoringStore(MONITORING_STATE_PATH)
         self._connect()
 
     def _connect(self) -> None:
@@ -48,9 +49,7 @@ class MongoManager:
             except Exception as exc:
                 self.warning = f"MongoDB write failed: {exc}"
 
-        self.fallback_alerts.append(record)
-        self.fallback_alerts = self.fallback_alerts[-500:]
-        return {"stored": False, "id": None, "warning": self.warning}
+        return self.local_store.insert_alert(record)
 
     def fetch_alerts(self, limit: int = 100) -> list[dict[str, Any]]:
         if self.connected and self.collection is not None:
@@ -62,10 +61,11 @@ class MongoManager:
             except Exception as exc:
                 self.warning = f"MongoDB read failed: {exc}"
 
-        return list(reversed(self.fallback_alerts[-limit:]))
+        return self.local_store.fetch_alerts(limit=limit)
 
     def get_stats(self) -> dict[str, Any]:
         alerts = self.fetch_alerts(limit=500)
+        case_stats = self.local_store.get_case_stats()
         threat_counter = Counter()
         risk_counter = Counter()
         entity_counter = Counter()
@@ -120,6 +120,65 @@ class MongoManager:
                 "average_campaign_score": round(sum(campaign_scores) / len(campaign_scores), 2) if campaign_scores else 0,
                 "average_impact_score": round(sum(impact_scores) / len(impact_scores), 2) if impact_scores else 0,
             },
+            "monitoring": case_stats,
             "mongo_connected": self.connected,
             "warning": self.warning,
         }
+
+    def list_cases(
+        self,
+        *,
+        limit: int = 200,
+        status: str | None = None,
+        priority: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.local_store.list_cases(limit=limit, status=status, priority=priority, search=search)
+
+    def get_case(self, case_id: str) -> dict[str, Any] | None:
+        return self.local_store.get_case(case_id)
+
+    def save_case(self, case: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        return self.local_store.save_case(case)
+
+    def update_case(self, case_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+        return self.local_store.update_case(case_id, updates)
+
+    def list_watchlists(self, *, enabled_only: bool = False) -> list[dict[str, Any]]:
+        return self.local_store.list_watchlists(enabled_only=enabled_only)
+
+    def save_watchlist(self, payload: dict[str, Any], watchlist_id: str | None = None) -> dict[str, Any]:
+        return self.local_store.save_watchlist(payload, watchlist_id=watchlist_id)
+
+    def delete_watchlist(self, watchlist_id: str) -> bool:
+        return self.local_store.delete_watchlist(watchlist_id)
+
+    def record_watchlist_run(
+        self,
+        watchlist_id: str,
+        *,
+        duration_ms: int,
+        case_count: int,
+        error: str | None = None,
+    ) -> dict[str, Any] | None:
+        return self.local_store.record_watchlist_run(
+            watchlist_id,
+            duration_ms=duration_ms,
+            case_count=case_count,
+            error=error,
+        )
+
+    def update_scheduler_state(self, summary: dict[str, Any]) -> None:
+        self.local_store.update_scheduler_state(summary)
+
+    def record_audit_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.local_store.record_audit_event(payload)
+
+    def list_audit_events(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self.local_store.list_audit_events(limit=limit)
+
+    def export_monitoring_snapshot(self) -> dict[str, Any]:
+        return self.local_store.export_snapshot()
+
+    def get_monitoring_stats(self) -> dict[str, Any]:
+        return self.local_store.get_case_stats()

@@ -53,6 +53,7 @@ function Analyzer() {
   const [intelLoading, setIntelLoading] = useState(false)
   const [toast, setToast] = useState('')
   const [streamFrame, setStreamFrame] = useState('')
+  const [lastCaseUpdateCount, setLastCaseUpdateCount] = useState(0)
 
   const summaryText = useMemo(() => {
     if (!result) {
@@ -71,14 +72,14 @@ function Analyzer() {
     const collectionSummary = intelResponse.summary
     if (intelResponse.count > 0) {
       if (collectionSummary) {
-        return `${intelResponse.demo_mode ? 'Generated' : 'Collected'} ${intelResponse.count} corroborated source finding${intelResponse.count > 1 ? 's' : ''} across ${collectionSummary.source_count || intelResponse.platforms?.length || 0} source${(collectionSummary.source_count || intelResponse.platforms?.length || 0) === 1 ? '' : 's'} for ${intelResponse.organization}. Combined priority is ${collectionSummary.combined_priority?.priority || 'LOW'} at score ${collectionSummary.combined_priority?.priority_score || 0}, with ${collectionSummary.estimated_total_records_label || 'unknown leak volume'}.`
+        return `${intelResponse.demo_mode ? 'Generated' : 'Collected'} ${intelResponse.count} corroborated source finding${intelResponse.count > 1 ? 's' : ''} across ${collectionSummary.source_count || intelResponse.platforms?.length || 0} source${(collectionSummary.source_count || intelResponse.platforms?.length || 0) === 1 ? '' : 's'} for ${intelResponse.organization}. Combined priority is ${collectionSummary.combined_priority?.priority || 'LOW'} at score ${collectionSummary.combined_priority?.priority_score || 0}, with ${collectionSummary.estimated_total_records_label || 'unknown leak volume'}. ${lastCaseUpdateCount ? `${lastCaseUpdateCount} monitoring case${lastCaseUpdateCount === 1 ? '' : 's'} updated for the Monitor workspace.` : ''}`
       }
 
       return `${intelResponse.demo_mode ? 'Generated' : 'Collected'} ${intelResponse.count} source intelligence result${intelResponse.count > 1 ? 's' : ''} across ${intelResponse.platforms?.length || 0} platform${intelResponse.platforms?.length === 1 ? '' : 's'} for ${intelResponse.organization}.`
     }
 
     return `No high-confidence intelligence hits were ${intelResponse.demo_mode ? 'generated' : 'collected'} for ${intelResponse.organization}.`
-  }, [intelResponse])
+  }, [intelResponse, lastCaseUpdateCount])
   const typedIntelSummary = useTypedText(intelSummary)
 
   const consoleLines = useMemo(() => {
@@ -140,7 +141,7 @@ function Analyzer() {
     } catch (apiError) {
       setToast(
         apiError?.response?.data?.detail ||
-          'Backend is unreachable. Start the FastAPI server at http://127.0.0.1:8000.',
+          'Backend is unreachable. Start the FastAPI server at http://127.0.0.1:8001.',
       )
       setResult(null)
     } finally {
@@ -157,13 +158,15 @@ function Analyzer() {
     setIntelLoading(true)
     setToast('')
     setIntelResponse(null)
+    setLastCaseUpdateCount(0)
 
     try {
       const response = await collectIntel(intelQuery.trim(), true, demo)
       setIntelResponse(response)
+      setLastCaseUpdateCount(response.case_updates?.length || 0)
       if (response.count > 0) {
         setToast(
-          `${demo ? 'Generated' : 'Collected'} ${response.count} intelligence result${response.count > 1 ? 's' : ''} and synced ${response.count > 1 ? 'them' : 'it'} to the dashboard.`,
+          `${demo ? 'Generated' : 'Collected'} ${response.count} intelligence result${response.count > 1 ? 's' : ''}. ${response.case_updates?.length || 0} monitoring case${(response.case_updates?.length || 0) === 1 ? '' : 's'} synced to Monitor.`,
         )
       } else {
         setToast(
@@ -327,8 +330,8 @@ function Analyzer() {
           <p className="text-xs uppercase tracking-[0.38em] text-[#FFC857]">External Source Intelligence</p>
           <h2 className="mt-3 text-3xl font-semibold text-white">Search by organization or domain</h2>
           <p className="mt-4 max-w-3xl text-sm text-slate-300">
-            Query Telegram, Pastebin, and Dehashed using an organization name or domain, then feed normalized
-            source intelligence into the existing dashboard pipeline.
+            Use this space for ad hoc investigations. The results are normalized into cases so the new Monitor
+            workflow can keep tracking corroborated exposure signals over time.
           </p>
 
           <div className="mt-6 rounded-[28px] border border-[#FFC857]/16 bg-[#020617]/82 p-4">
@@ -378,7 +381,7 @@ function Analyzer() {
             <div className="glass-card rounded-[22px] px-5 py-4">
               <p className="text-xs uppercase tracking-[0.32em] text-slate-500">Pipeline sync</p>
               <p className="mt-2 text-sm font-semibold text-[#00FF9F]">
-                {intelResponse?.demo_mode ? 'Demo dataset isolated from live providers' : 'Dashboard persistence enabled'}
+                {intelResponse?.demo_mode ? 'Demo dataset isolated from live providers' : 'Case sync to Monitor enabled'}
               </p>
             </div>
           </div>
@@ -420,6 +423,15 @@ function Analyzer() {
                 <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Warnings</p>
                 <p className="mt-3 text-2xl font-semibold text-[#FFB4B4]">{intelResponse.warnings?.length || 0}</p>
               </div>
+            </div>
+          ) : null}
+
+          {intelResponse?.case_updates?.length ? (
+            <div className="glass-card rounded-[24px] border border-[#00E5FF]/15 bg-[#00E5FF]/6 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-[#00E5FF]">Monitor Sync</p>
+              <p className="mt-3 text-sm text-slate-200">
+                {intelResponse.case_updates.length} case{intelResponse.case_updates.length === 1 ? '' : 's'} were created or updated in the Monitor workspace from this collection run.
+              </p>
             </div>
           ) : null}
 

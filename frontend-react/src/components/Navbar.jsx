@@ -2,9 +2,9 @@ import { motion as Motion } from 'framer-motion'
 import { NavLink } from 'react-router-dom'
 
 const navItems = [
-  { label: 'Analyzer', path: '/analyzer' },
-  { label: 'Dashboard', path: '/dashboard' },
-  { label: 'Threat Feed', path: '/feed' },
+  { label: 'Analyze', path: '/analyzer' },
+  { label: 'Executive Dashboard', path: '/dashboard' },
+  { label: 'Monitor', path: '/monitor' },
   { label: 'Upload', path: '/upload' },
 ]
 

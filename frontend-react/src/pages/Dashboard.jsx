@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion as Motion } from 'framer-motion'
 import {
   Area,
@@ -17,7 +17,7 @@ import Loader from '../components/Loader'
 import StatCard from '../components/StatCard'
 import TerminalConsole from '../components/TerminalConsole'
 import Toast from '../components/Toast'
-import { getStats } from '../services/api'
+import { getMonitoringStats } from '../services/api'
 
 const pieColors = ['#00CFFF', '#FF3B3B', '#00FF9F', '#8B5CF6', '#FACC15']
 
@@ -32,12 +32,12 @@ function Dashboard() {
       setToast('')
 
       try {
-        const response = await getStats()
+        const response = await getMonitoringStats()
         setStats(response)
       } catch (apiError) {
         setToast(
           apiError?.response?.data?.detail ||
-            'Unable to reach backend statistics endpoint. Ensure FastAPI is running.',
+            'Unable to reach the monitoring statistics endpoint. Ensure FastAPI is running.',
         )
       } finally {
         setLoading(false)
@@ -55,42 +55,36 @@ function Dashboard() {
     return () => window.clearTimeout(timeoutId)
   }, [toast])
 
-  const threatData = Object.entries(stats?.threat_distribution || {}).map(([name, value]) => ({ name, value }))
-  const riskData = Object.entries(stats?.risk_levels || {}).map(([name, value]) => ({ name, value }))
-  const priorityData = Object.entries(stats?.priority_distribution || {}).map(([name, value]) => ({ name, value }))
-  const languageData = Object.entries(stats?.language_distribution || {}).map(([name, value]) => ({ name, value }))
-  const highRisk = stats?.risk_levels?.HIGH ?? 0
-  const mediumRisk = stats?.risk_levels?.MEDIUM ?? 0
-  const lowRisk = stats?.risk_levels?.LOW ?? 0
-  const correlationOverview = stats?.correlation_overview || {}
-  const activityData = [
-    { time: '00:00', scans: Math.max(6, Math.round((stats?.total_alerts ?? 0) * 0.12)) },
-    { time: '04:00', scans: Math.max(12, Math.round((stats?.total_alerts ?? 0) * 0.18)) },
-    { time: '08:00', scans: Math.max(18, Math.round((stats?.total_alerts ?? 0) * 0.26)) },
-    { time: '12:00', scans: Math.max(24, Math.round((stats?.total_alerts ?? 0) * 0.33)) },
-    { time: '16:00', scans: Math.max(16, Math.round((stats?.total_alerts ?? 0) * 0.29)) },
-    { time: '20:00', scans: Math.max(20, Math.round((stats?.total_alerts ?? 0) * 0.4)) },
-  ]
-  const sideMetrics = [
-    { label: 'Neural Engine', value: Math.min(99, 65 + Math.round((stats?.model_metrics?.accuracy || 0) * 30)), accent: '#00E5FF' },
-    { label: 'Database Load', value: stats?.mongo_connected ? 74 : 33, accent: '#00FF9F' },
-    { label: 'Scan Rate', value: Math.min(98, Math.max(18, Math.round((stats?.total_alerts ?? 0) * 1.5))), accent: '#FFC857' },
-    { label: 'Active Nodes', value: Math.min(95, Math.max(12, correlationOverview.correlated_alerts || 12)), accent: '#FF3B3B' },
-  ]
+  const priorityData = useMemo(
+    () => Object.entries(stats?.priority_distribution || {}).map(([name, value]) => ({ name, value })),
+    [stats],
+  )
+  const statusData = useMemo(
+    () => Object.entries(stats?.status_distribution || {}).map(([name, value]) => ({ name, value })),
+    [stats],
+  )
+  const sourceData = useMemo(
+    () => Object.entries(stats?.source_distribution || {}).map(([name, value]) => ({ name, value })),
+    [stats],
+  )
+  const exposureData = useMemo(
+    () => Object.entries(stats?.exposure_distribution || {}).map(([name, value]) => ({ name, value })),
+    [stats],
+  )
+  const activeCases = stats?.active_cases ?? 0
+  const criticalCases = stats?.critical_cases ?? 0
+  const corroboratedCases = stats?.corroborated_cases ?? 0
+  const watchlistHealth = stats?.watchlist_health || []
+  const timelineData = (stats?.timeline || []).map((item) => ({
+    bucket: item.bucket.slice(5),
+    cases: item.cases,
+  }))
   const consoleLines = [
-    'Command center synchronized with FastAPI telemetry.',
-    `Monitoring ${stats?.total_alerts ?? 0} total persisted alerts.`,
-    `Risk distribution HIGH:${highRisk} MEDIUM:${mediumRisk} LOW:${lowRisk}.`,
-    `Average campaign score ${correlationOverview.average_campaign_score || 0}; average impact ${correlationOverview.average_impact_score || 0}.`,
-    `Secondary model status: ${stats?.secondary_status || 'unknown'}.`,
-  ]
-  const mapNodes = [
-    { top: '18%', left: '22%', color: '#00FF9F', scale: 1.1 },
-    { top: '30%', left: '61%', color: '#FF3B3B', scale: 1.35 },
-    { top: '44%', left: '35%', color: '#00E5FF', scale: 1 },
-    { top: '58%', left: '72%', color: '#FFC857', scale: 1.2 },
-    { top: '66%', left: '18%', color: '#FF3B3B', scale: 1.1 },
-    { top: '24%', left: '82%', color: '#00FF9F', scale: 0.9 },
+    'Executive command view synchronized with the monitoring scheduler.',
+    `Active cases ${activeCases}; critical cases ${criticalCases}; corroborated cases ${corroboratedCases}.`,
+    `Enabled watchlists ${stats?.enabled_watchlists ?? 0}; new cases in the last 24h ${stats?.new_cases_24h ?? 0}.`,
+    `Mean time to review ${stats?.mean_time_to_review_hours ?? 0} hours.`,
+    `Last scheduler cycle: ${stats?.scheduler?.last_cycle_summary?.watchlists_executed ?? 0} watchlists executed.`,
   ]
 
   return (
@@ -101,15 +95,15 @@ function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
       >
-        <StatCard label="Total Threats" value={stats?.total_alerts ?? '--'} accent="#00E5FF" icon="01" />
-        <StatCard label="High Risk" value={highRisk} accent="#FF3B3B" icon="HR" pulse />
-        <StatCard label="Medium Risk" value={mediumRisk} accent="#FFC857" icon="MR" />
-        <StatCard label="Low Risk" value={lowRisk} accent="#00FF9F" icon="LR" />
+        <StatCard label="Active Cases" value={stats?.active_cases ?? '--'} accent="#00E5FF" icon="AC" />
+        <StatCard label="Critical Cases" value={criticalCases} accent="#FF3B3B" icon="CC" pulse />
+        <StatCard label="Corroborated" value={corroboratedCases} accent="#00FF9F" icon="CO" />
+        <StatCard label="New In 24h" value={stats?.new_cases_24h ?? '--'} accent="#FFC857" icon="24" />
       </Motion.section>
 
       {loading ? (
         <div className="glass-card rounded-[32px] p-8">
-          <Loader label="Loading dashboard telemetry..." />
+          <Loader label="Loading executive exposure dashboard..." />
         </div>
       ) : (
         <>
@@ -121,37 +115,33 @@ function Dashboard() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.35em] text-[#00E5FF]">Command Center</p>
-                  <h2 className="mt-2 text-3xl font-semibold text-white">Global Threat Map</h2>
+                  <p className="text-xs uppercase tracking-[0.35em] text-[#00E5FF]">Executive Exposure Overview</p>
+                  <h2 className="mt-2 text-3xl font-semibold text-white">Case volume over time</h2>
                 </div>
                 <div className="terminal-text rounded-full border border-white/8 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  live topology
+                  real monitoring data
                 </div>
               </div>
 
-              <div className="relative mt-6 h-[26rem] overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.95),rgba(15,23,42,0.75))]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,229,255,0.08),transparent_35%)]" />
-                <div className="absolute inset-0 opacity-45 [background-image:linear-gradient(rgba(0,229,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,0.08)_1px,transparent_1px)] [background-size:36px_36px]" />
-                {mapNodes.map((node, index) => (
-                  <Motion.div
-                    key={`${node.top}-${node.left}-${index}`}
-                    className="absolute rounded-full"
-                    style={{
-                      top: node.top,
-                      left: node.left,
-                      width: `${18 * node.scale}px`,
-                      height: `${18 * node.scale}px`,
-                      backgroundColor: node.color,
-                      boxShadow: `0 0 18px ${node.color}`,
-                    }}
-                    animate={{ y: [0, -10, 0], opacity: [0.55, 1, 0.55] }}
-                    transition={{ duration: 2.8 + index * 0.2, repeat: Infinity, ease: 'easeInOut' }}
-                  />
-                ))}
-                <svg className="absolute inset-0 h-full w-full opacity-35" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <path d="M20,22 L35,44 L61,30 L72,58" stroke="#00E5FF" strokeWidth="0.35" fill="none" />
-                  <path d="M18,66 L35,44 L58,72 L82,24" stroke="#00FF9F" strokeWidth="0.35" fill="none" />
-                </svg>
+              <div className="mt-6 h-[26rem] rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(2,6,23,0.95),rgba(15,23,42,0.75))] p-4">
+                {timelineData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={timelineData}>
+                      <defs>
+                        <linearGradient id="caseTimelineFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#00E5FF" stopOpacity={0.45} />
+                          <stop offset="100%" stopColor="#00E5FF" stopOpacity={0.04} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="bucket" stroke="#94A3B8" />
+                      <YAxis stroke="#94A3B8" allowDecimals={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 16 }} />
+                      <Area type="monotone" dataKey="cases" stroke="#00E5FF" fill="url(#caseTimelineFill)" strokeWidth={3} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-slate-400">No timeline data available yet.</div>
+                )}
               </div>
             </Motion.section>
 
@@ -160,12 +150,17 @@ function Dashboard() {
               animate={{ opacity: 1, x: 0 }}
               className="grid gap-4"
             >
-              {sideMetrics.map((metric) => (
+              {[
+                { label: 'Enabled Watchlists', value: stats?.enabled_watchlists ?? 0, accent: '#00FF9F' },
+                { label: 'Mean Time To Review', value: stats?.mean_time_to_review_hours ?? 0, accent: '#FFC857' },
+                { label: 'Case Backlog', value: activeCases, accent: '#00E5FF' },
+                { label: 'Scheduler Runs', value: stats?.scheduler?.last_cycle_summary?.watchlists_executed ?? 0, accent: '#FF3B3B' },
+              ].map((metric) => (
                 <div key={metric.label} className="glass-card neon-panel rounded-[28px] p-5">
                   <div className="flex items-center justify-between">
                     <p className="text-xs uppercase tracking-[0.34em] text-slate-400">{metric.label}</p>
                     <p className="terminal-text text-sm" style={{ color: metric.accent }}>
-                      {metric.value}%
+                      {metric.value}
                     </p>
                   </div>
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/6">
@@ -173,7 +168,7 @@ function Dashboard() {
                       className="h-full rounded-full"
                       style={{ background: `linear-gradient(90deg, ${metric.accent}, transparent)` }}
                       initial={{ width: '0%' }}
-                      animate={{ width: `${metric.value}%` }}
+                      animate={{ width: `${Math.min(100, Math.max(10, Number(metric.value) || 0))}%` }}
                       transition={{ duration: 1 }}
                     />
                   </div>
@@ -184,85 +179,15 @@ function Dashboard() {
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr_0.8fr]">
             <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#00E5FF]">Activity</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Threat activity timeline</h3>
+              <p className="text-xs uppercase tracking-[0.35em] text-[#00E5FF]">Priority Distribution</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Exposure case urgency</h3>
               <div className="mt-6 h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activityData}>
-                    <defs>
-                      <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00E5FF" stopOpacity={0.45} />
-                        <stop offset="100%" stopColor="#00E5FF" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" stroke="#94A3B8" />
-                    <YAxis stroke="#94A3B8" />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 16 }} />
-                    <Area type="monotone" dataKey="scans" stroke="#00E5FF" fill="url(#activityFill)" strokeWidth={3} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#FFC857]">Risk Matrix</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Risk levels</h3>
-              <div className="mt-6 h-80">
-                {riskData.length ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={riskData}>
-                      <XAxis dataKey="name" stroke="#94A3B8" />
-                      <YAxis stroke="#94A3B8" allowDecimals={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,200,87,0.2)', borderRadius: 16 }} />
-                      <Bar dataKey="value" radius={[12, 12, 0, 0]}>
-                        {riskData.map((entry) => (
-                          <Cell
-                            key={entry.name}
-                            fill={entry.name === 'HIGH' ? '#FF3B3B' : entry.name === 'MEDIUM' ? '#FFC857' : '#00FF9F'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-slate-400">No risk data available yet.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#00FF9F]">Threat Types</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Distribution</h3>
-              <div className="mt-6 h-80">
-                {threatData.length ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={threatData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={92} paddingAngle={4}>
-                        {threatData.map((entry, index) => (
-                          <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(0,255,159,0.2)', borderRadius: 16 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-slate-400">No threat data available yet.</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_0.9fr_1.2fr]">
-            <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#FF3B3B]">Priority Tiers</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Alert priority</h3>
-              <div className="mt-6 h-72">
                 {priorityData.length ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={priorityData}>
                       <XAxis dataKey="name" stroke="#94A3B8" />
                       <YAxis stroke="#94A3B8" allowDecimals={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,59,59,0.2)', borderRadius: 16 }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 16 }} />
                       <Bar dataKey="value" radius={[10, 10, 0, 0]}>
                         {priorityData.map((entry) => (
                           <Cell
@@ -274,20 +199,20 @@ function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-slate-400">No priority data available yet.</div>
+                  <div className="flex h-full items-center justify-center text-slate-400">No priority data yet.</div>
                 )}
               </div>
             </div>
 
             <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#FFC857]">Language Coverage</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Normalized sources</h3>
-              <div className="mt-6 h-72">
-                {languageData.length ? (
+              <p className="text-xs uppercase tracking-[0.35em] text-[#FFC857]">Workflow States</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Case triage progress</h3>
+              <div className="mt-6 h-80">
+                {statusData.length ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={languageData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={82} paddingAngle={4}>
-                        {languageData.map((entry, index) => (
+                      <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={92} paddingAngle={4}>
+                        {statusData.map((entry, index) => (
                           <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
                         ))}
                       </Pie>
@@ -295,34 +220,113 @@ function Dashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-slate-400">No multilingual data available yet.</div>
+                  <div className="flex h-full items-center justify-center text-slate-400">No workflow data available yet.</div>
                 )}
               </div>
             </div>
 
             <div className="glass-card neon-panel rounded-[32px] p-6">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#00FF9F]">Correlation & Impact</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">Intelligence quality</h3>
-              <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#00FF9F]">Exposed Data Types</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Most common exposure categories</h3>
+              <div className="mt-6 h-80">
+                {exposureData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={exposureData}>
+                      <XAxis dataKey="name" stroke="#94A3B8" />
+                      <YAxis stroke="#94A3B8" allowDecimals={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(0,255,159,0.2)', borderRadius: 16 }} />
+                      <Bar dataKey="value" radius={[12, 12, 0, 0]}>
+                        {exposureData.map((entry, index) => (
+                          <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-slate-400">No exposure breakdown available yet.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[0.9fr_0.9fr_1.2fr]">
+            <div className="glass-card neon-panel rounded-[32px] p-6">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#FF3B3B]">Source Coverage</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Cases by monitored source</h3>
+              <div className="mt-6 h-72">
+                {sourceData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={sourceData}>
+                      <XAxis dataKey="name" stroke="#94A3B8" />
+                      <YAxis stroke="#94A3B8" allowDecimals={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,59,59,0.2)', borderRadius: 16 }} />
+                      <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                        {sourceData.map((entry, index) => (
+                          <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-slate-400">No source data available yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="glass-card neon-panel rounded-[32px] p-6">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#FFC857]">Operational Readiness</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Response workflow KPIs</h3>
+              <div className="mt-6 grid gap-4">
                 <div className="rounded-[22px] border border-white/8 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Correlated Alerts</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">{correlationOverview.correlated_alerts ?? 0}</p>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Mean Time To Review</p>
+                  <p className="mt-3 text-3xl font-semibold text-white">{stats?.mean_time_to_review_hours ?? 0}h</p>
                 </div>
                 <div className="rounded-[22px] border border-white/8 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Avg Campaign Score</p>
-                  <p className="mt-3 text-3xl font-semibold text-[#00E5FF]">{correlationOverview.average_campaign_score ?? 0}</p>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Corroborated Cases</p>
+                  <p className="mt-3 text-3xl font-semibold text-[#00E5FF]">{corroboratedCases}</p>
                 </div>
                 <div className="rounded-[22px] border border-white/8 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Avg Impact Score</p>
-                  <p className="mt-3 text-3xl font-semibold text-[#FFC857]">{correlationOverview.average_impact_score ?? 0}</p>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Enabled Watchlists</p>
+                  <p className="mt-3 text-3xl font-semibold text-[#FFC857]">{stats?.enabled_watchlists ?? 0}</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="glass-card neon-panel rounded-[32px] p-6">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#00FF9F]">Watchlist Health</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Collector performance</h3>
+              <div className="mt-6 space-y-4">
+                {watchlistHealth.length ? (
+                  watchlistHealth.map((watchlist) => (
+                    <div key={watchlist.id} className="rounded-[22px] border border-white/8 bg-black/10 p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">{watchlist.name}</p>
+                        <p className={`terminal-text text-[11px] uppercase tracking-[0.24em] ${watchlist.last_error ? 'text-[#FFB4B4]' : 'text-[#B8FFE0]'}`}>
+                          {watchlist.last_error ? 'Attention' : 'Healthy'}
+                        </p>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-300">
+                        {watchlist.last_error
+                          ? watchlist.last_error
+                          : `Last run ${watchlist.last_duration_ms || 0} ms, ${watchlist.last_case_count || 0} cases touched.`}
+                      </p>
+                      <p className="mt-2 text-xs uppercase tracking-[0.22em] text-slate-500">
+                        {watchlist.last_success_at ? `Success ${new Date(watchlist.last_success_at).toLocaleString()}` : 'No successful run yet'}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[22px] border border-white/8 bg-black/10 p-4 text-slate-400">
+                    No watchlists configured yet.
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           <TerminalConsole
             key={consoleLines.join('|')}
-            title="System Console"
+            title="Executive Console"
             lines={consoleLines}
             accent="#00FF9F"
             minHeight="min-h-[240px]"
